@@ -238,6 +238,7 @@ newtype instance UV.Vector Interval = V_Interval  (UV.Vector (Double,Double))
 instance Unbox Interval
 
 instance GMV.MVector UV.MVector Interval where
+  basicInitialize (MV_Interval a)=GMV.basicInitialize a
   basicLength (MV_Interval a)=GMV.basicLength a
   basicUnsafeSlice a b (MV_Interval c)=MV_Interval $ GMV.basicUnsafeSlice a b c
   basicOverlaps (MV_Interval a) (MV_Interval b)=GMV.basicOverlaps a b
