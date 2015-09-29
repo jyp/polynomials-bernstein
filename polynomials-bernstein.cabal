@@ -6,17 +6,18 @@ Description: 	This library defines an optimized type for representing polynomial
 		manipulation functions, and a solver of systems of polynomial
 		equations in this form.
 Category:	Math
-Maintainer:	Pierre-Etienne Meunier <pierreetienne.meunier@gmail.com>
+Author:         Pierre-Etienne Meunier <pierreetienne.meunier@gmail.com>
+Maintainer:	Jean-Philippe Bernardy <jeanphilippe.bernardy@gmail.com>
 License:	GPL
 License-file:	LICENSE
 Build-Type:	Simple
 Cabal-Version:	>=1.6
 source-repository this
-        type: darcs
-        location: http://www.lama.univ-savoie.fr/~meunier/darcs/polynomials
-        tag: 1.1.1
+        type: git
+        location: https://github.com/jyp/polynomials-bernstein
+        tag: 1.1.2
 Library
-        Build-Depends:	base<5,	vector
+        Build-Depends:	base<5,	vector>=0.11
         Exposed-modules: Algebra.Polynomials.Bernstein, Algebra.Polynomials.Numerical
         ghc-options: -O2 -Wall
         c-sources: Algebra/Polynomials/cnumerical.c
