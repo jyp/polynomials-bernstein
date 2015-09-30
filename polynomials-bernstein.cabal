@@ -1,5 +1,5 @@
 Name:		polynomials-bernstein
-Version: 	1.1.1
+Version: 	1.1.2
 Synopsis:	A solver for systems of polynomial equations in bernstein form
 Description: 	This library defines an optimized type for representing polynomials
 		in Bernstein form, as well as instances of numeric classes and other
@@ -12,10 +12,9 @@ License:	GPL
 License-file:	LICENSE
 Build-Type:	Simple
 Cabal-Version:	>=1.6
-source-repository this
+source-repository head
         type: git
         location: https://github.com/jyp/polynomials-bernstein
-        tag: 1.1.2
 Library
         Build-Depends:	base<5,	vector>=0.11
         Exposed-modules: Algebra.Polynomials.Bernstein, Algebra.Polynomials.Numerical
