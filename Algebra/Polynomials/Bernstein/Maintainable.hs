@@ -13,6 +13,7 @@
 module Algebra.Polynomials.Bernstein.Maintainable where
 
 import Prelude hiding (Num(..),(/),mod,fromRational)
+import qualified Prelude
 import Prelude (abs)
 import Algebra.Classes
 import Algebra.Linear hiding (index)
@@ -47,12 +48,24 @@ instance Arbitrary (BernsteinP V2' Double) where
     c <- replicateM (n*m) arbitrary
     return $ BernsteinP (V2' m n) (UV.fromList c)
 
+genPoint :: Gen (V2' Double)
+genPoint = V2' <$> choose (0::Double,1) <*> choose (0::Double,1)
+
 -- | Are the two polynomials within 0.01 ?
 similarBP :: BernsteinP V2' Double -> BernsteinP V2' Double ->  Property
-similarBP x y = forAll (choose (0::Double,1)) $ \t ->
-                forAll (choose (0::Double,1)) $ \u ->
-                let v = V2' t u
-                in abs (deCasteljauN v x - deCasteljauN v y) < 0.01
+similarBP x y = forAll genPoint $ \v -> deCasteljauN v x `similar` deCasteljauN v y
+
+-- | Are two points similar within 0.01 ?
+similar :: (Ord a, Prelude.Num a, Field a) => a -> a -> Bool
+similar x y = abs (x-y) < 0.01
+
+genBox :: Gen (V2' Double, V2' Double)
+genBox = do
+  p <- genPoint
+  q <- genPoint
+  let a = min <$> p <*> q
+  let b = max <$> p <*> q
+  return (a,b)
 
 prop_refl :: BernsteinP V2' Double -> Property
 prop_refl x = similarBP x x
@@ -94,6 +107,13 @@ class (Foldable f,Applicative f) => Finite f where
   cut :: (Field a,Ord a) => Int -> (f a,f a) -> [(f a,f a)]
   deCasteljauN :: (Field v,UV.Unbox v, Module a v) => f a -> BernsteinP f v -> v
   restrictN :: (Field a, UV.Unbox a) => Int -> f Int -> Box f a -> MUV.MVector s a -> ST s ()
+
+prop_restrict :: BernsteinP V2' Double -> Property
+prop_restrict p =
+  forAll genBox $ \b@(lo,hi) ->
+  forAll genPoint $ \t ->
+  let t' = (+) <$> lo <*> ((*) <$> ((-) <$> hi <*> lo) <*> t)
+  in deCasteljau t (restrict b p) `similar` deCasteljau t' p
 
 -- | Restrict a polynomial to the given sub-box of the f-dimensional unit-box.
 restrict :: (MUV.Unbox a, Finite f, Field a) => Box f a -> BernsteinP f a -> BernsteinP f a
