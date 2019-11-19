@@ -1,3 +1,4 @@
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -9,6 +10,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RebindableSyntax #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Algebra.Polynomials.Bernstein.Maintainable where
 
@@ -132,11 +135,11 @@ instance Finite VZero where
   cut _ _ = error "BernsteinP: attempt to cut in non-existing dimension"
   restrictN _ _ _ _ = return ()
 
-boxSize :: (Ring a, Finite f) => Box f a -> a
-boxSize (a,b) = multiply ((-) <$> b <*> a)
+boxSize :: (Ring a, Finite f) => Int -> Box f a -> a
+boxSize n (a,b) = toList ((-) <$> b <*> a)!!n
 
-variables :: forall f. Finite f => Int
-variables = length (pure () :: f ())
+variables :: forall f x. Finite f => Box f x -> Int
+variables _ = length (pure () :: f ())
 
 -- | Run a restriction pass (to the interval [u,v]) on Berstein
 -- coefficients pf, in-place. The dimension to act on is given by the
@@ -264,3 +267,154 @@ instance (Finite f,UV.Unbox b,Field b) => Additive (BernsteinP f b) where
           BernsteinP _ cy = elevateTo dmax y
 instance (Finite f,UV.Unbox b,Field b) => Group (BernsteinP f b) where
   negate = mapCoefs negate
+
+data Interval=Interval {ilow::Double,iup::Double} deriving (Eq, Show)
+-- instance Module Interval Interval
+-- instance Ring Interval
+instance Multiplicative Interval
+instance Division Interval
+instance Additive Interval
+
+restriction :: Box f Double -> BernsteinP f Interval -> Box f Double
+restriction = _
+
+
+-- | Computes the intersection of a given Bezier hypersurface, given
+-- by its graph, with 0-valued plane.
+solve :: forall f. (Finite f, Eq (f Double)) =>Double->V.Vector (BernsteinP f Interval)-> Box f Double -> [Box f Double] 
+solve sizeThreshold equations h =
+  if isSmall h'
+  then if check (restrictAll 0 h') then [h'] else []
+  else if check h'
+       then case cc of
+              [h''] | h''==h -> [h]
+              _-> concatMap (solve sizeThreshold equations) cc
+       else []
+  where splitThreshold=0.95
+        restrictAll neq box
+          | neq>=V.length equations = box
+          | not (check box) = box
+          | otherwise = let next=restriction box (equations V.! neq)
+                        in restrictAll (neq+1) next
+        h'=restrictAll 0 h
+        cutAll v boxes
+             | v>=variables h = boxes
+             | otherwise =
+               cutAll (v+1) $
+               concatMap (\b->if boxSize v b >= splitThreshold * boxSize v h
+                                 && boxSize v b > sizeThreshold
+                                      then cut v b
+                                      else [b]) boxes
+        cc=cutAll 0 [h']
+        sz (lo,hi) = (-) <$> hi <*> lo
+        check = all (\s -> 0<=s && s<(1/0)) . sz
+        isSmall = all (<= sizeThreshold) . sz
+
+{-
+-- Le booleen veut dire "tous les coefs sont nuls"
+convexHull::Int->Int->Int->BernsteinP f Interval->Double->Double->(Bool,Double,Double)
+convexHull bef aft nv (BernsteinP _ points) a b=
+  let (allzero,pointsl,pointsu)=runST $ do
+        let idx i j k=(i*nv+j)*aft + k
+        pl<-MUV.replicate nv (1/0)
+        pu<-MUV.replicate nv (-1/0)
+        let fill i j k allzero_ -- a avant, b courant, c apres
+              | i>=bef = return allzero_
+              | j>=nv = fill (i+1) 0 0 allzero_
+              | k>=aft = fill i (j+1) 0 allzero_
+              | otherwise = do
+                pl0<-MUV.read pl j
+                pu0<-MUV.read pu j
+                MUV.write pl j (min pl0 $ ilow $ points UV.!(idx i j k))
+                MUV.write pu j (max pu0 $ iup  $ points UV.!(idx i j k))
+                fill i j (k+1) (allzero_ && pl0<=0 && pu0>=0)
+        allzero_<-fill 0 0 0 True
+        pl'<-UV.unsafeFreeze pl
+        pu'<-UV.unsafeFreeze pu
+        return (allzero_,pl',pu')
+      inter::Int->Int->(Double,Double)
+      inter i j
+        | i>j = inter j i
+        | otherwise =
+          let yli=pointsl UV.! i
+              yui=pointsu UV.! i
+              ylj=pointsl UV.! j
+              yuj=pointsu UV.! j
+              fi=fromIntegral i
+              fj=fromIntegral j
+              inter0 yi yj=
+                let k=fromIntegral $ i-j in
+                Interval fi fi + 
+                (Interval yi yi)*(Interval k k)/
+                (Interval yj yj-Interval yi yi)
+          in
+           if yli<=0 then
+             if yui>=0 then
+               if ylj<=0 then
+                 if yuj>=0 then
+                   -- 1 les deux sont sur la ligne
+                   --traceShow "1" $
+                   (fi,fj)
+                 else
+                   -- 2 M est sur la ligne, M' est en-dessous
+                   --traceShow "2" $
+                   (fi, iup $ inter0 yui yuj)
+               else
+                 -- 3 M est sur la ligne, M' est au-dessus
+                 --traceShow "3" $
+                 (fi,iup $ inter0 yli ylj)
+             else
+               -- M est en-dessous de la ligne 
+               if ylj<=0 then
+                 if yuj>=0 then
+                   -- 4 M' est sur la ligne
+                   --traceShow "4" $
+                   (ilow $ inter0 yui yuj, fj)
+                 else
+                   -- 5 M' est en-dessous (comme M)
+                   --traceShow "5" $
+                   (1/0,-1/0)
+               else
+                 -- 6 M' est au-dessus
+                 --traceShow "6" $
+                 (ilow $ inter0 yui yuj, iup $ inter0 yli ylj)
+           else
+               -- M est au-dessus de la ligne
+               if ylj<=0 then
+                 if yuj>=0 then
+                   -- 7 M' est sur la ligne
+                   --traceShow "7" $
+                   (ilow $ inter0 yli ylj,fj)
+                 else
+                   -- 8 M' est en-dessous (comme M)
+                   --traceShow "8" $
+                   (ilow $ inter0 yli ylj, iup $ inter0 yui yuj)
+               else
+                 -- 9 M' est au-dessus
+                 --traceShow "9" $
+                 (1/0,-1/0)
+                 
+      testAll i j m0 m1
+        | i>=nv = 
+          let fn=fromIntegral (nv-1)
+              (# a0,b0 #)=over m0 m0 fn fn
+              (# a1,b1 #)=minus b b a a
+              (# a2,b2 #)=times a0 b0 a1 b1
+              (# a3,_ #)=plus a a a2 b2
+              
+              (# c0,d0 #)=over m1 m1 fn fn
+              (# c2,d2 #)=times c0 d0 a1 b1
+              (# _,d3 #)=plus a a c2 d2
+          in
+           (False,a3,d3)
+        | j>=nv = testAll (i+1) (i+1) m0 m1
+        | otherwise = 
+          let (m0',m1')=inter i j in
+          testAll i (j+1)
+          (min m0 m0') (max m1 m1')
+  in
+   --traceShow allzero $
+   if allzero then (True,a,b) else
+     testAll 0 0 (1/0) (-1/0)
+--traceShow ("convexHull",pointsl,pointsu,m) $ m
+-}
